@@ -7,10 +7,10 @@
 #include <metamod/utils.h>
 #include <addtofullpack_manager/rehlds_api.h>
 #include <addtofullpack_manager/regamedll_api.h>
-#include <map>
 #include <vector>
 #include <memory>
 #include <algorithm>    // std::find_if
+#include <unordered_map>
 
 using namespace std;
 
@@ -100,7 +100,7 @@ namespace AddToFullPackManager
 			uintptr_t real_size;
 		};
 
-		static map<entity_state_e, EntityStateType> es_types;
+		static unordered_map<entity_state_e, EntityStateType> es_types;
 
 		entity_state_e type;
 		void* value;
@@ -113,7 +113,6 @@ namespace AddToFullPackManager
 	public:
 		static void EntityStateInitTypes()
 		{
-			//sizeof(EntityState::render_color);
 			es_types.clear();
 			REGISTER_ES_TYPE(entity_type, Integer);
 			REGISTER_ES_TYPE(number, Integer);
@@ -187,14 +186,13 @@ namespace AddToFullPackManager
 
 		~SingleEntityState()
 		{
-			delete value;
+			delete [] value;
 		}
 
 		void updateValue(cell* new_value)
 		{
-			delete value;
+			delete [] value;
 			setValue(new_value);
-
 		}
 
 		void setValue(cell* value)
@@ -275,11 +273,11 @@ namespace AddToFullPackManager
 		}
 	};
 }
-
-map <int, map<int, vector<shared_ptr<AddToFullPackManager::SingleEntityState>>>> mapAddToFullPackManager;
-map <int, map<int, bool>> mapCollisionManager;
-map <int, map<int, bool>> mapNoTraceManager;
-map<entity_state_e, AddToFullPackManager::SingleEntityState::EntityStateType> AddToFullPackManager::SingleEntityState::es_types;
+unordered_map<int, unordered_map<int, vector<shared_ptr<AddToFullPackManager::SingleEntityState>>>> mapAddToFullPackManager;
+unordered_map<int, vector<int>> mapSemiclipManager;
+unordered_map<int, vector<int>> mapNoCollisionManager;
+unordered_map<int, vector<int>> mapNoTraceManager;
+unordered_map<entity_state_e, AddToFullPackManager::SingleEntityState::EntityStateType> AddToFullPackManager::SingleEntityState::es_types;
 PhysEntity phys_ents_backup[MAX_PHYS_ENTS];
 uint32_t phys_ents_backup_num;
 
@@ -315,31 +313,60 @@ int add_to_full_pack(EntityState* state, int entity_index, Edict* entity, Edict*
 
 void pm_move(PlayerMove* move, qboolean server)
 {
-	/* PRE */
 	int id = move->player_index + 1;
-	auto colEl = mapCollisionManager.find(id);
-	if (colEl == mapCollisionManager.end())
+	auto colEl = mapSemiclipManager.find(id);
+	if (colEl == mapSemiclipManager.end())
 		return;
-	
+
 	phys_ents_backup_num = move->num_phys_ent;
 	memcpy(phys_ents_backup, move->phys_ents, sizeof(PhysEntity) * move->num_phys_ent);
 	move->num_phys_ent = 0;
 	for (int i = 0; i < phys_ents_backup_num; i++)
 	{
-		if (colEl->second.find(phys_ents_backup[i].info) != colEl->second.end())
+		auto exists = find_if(colEl->second.begin(),
+			colEl->second.end(), [&](auto& info)
+			{
+				return (info == phys_ents_backup[i].info);
+			});
+
+		if (exists != colEl->second.end())
 		{
 			continue;
 		}
+
 		memcpy(&move->phys_ents[move->num_phys_ent++], &move->phys_ents[i], sizeof(PhysEntity));
 	}
-	
+
 	GameDll::pm_move(move, server);
 	/* POST */
 	move->num_phys_ent = phys_ents_backup_num;
 	memcpy(move->phys_ents, phys_ents_backup, sizeof(PhysEntity) * move->num_phys_ent);
 
 	RETURN_META(MetaResult::Supercede);
+}
 
+qboolean should_collide(Edict* entity_touched, Edict* entity_other)
+{
+	int toucher_id = Engine::index_of_edict(entity_other);
+	if (mapNoCollisionManager.find(toucher_id) == mapNoCollisionManager.end())
+	{
+		RETURN_META_VALUE(MetaResult::Ignored, 1);
+	}
+
+	int touched_id = Engine::index_of_edict(entity_touched);
+
+	auto exists = find_if(mapNoCollisionManager[toucher_id].begin(),
+		mapNoCollisionManager[toucher_id].end(), [&](auto& id)
+		{
+			return (id == touched_id);
+		});
+
+	if (exists != mapNoCollisionManager[toucher_id].end())
+	{
+		RETURN_META_VALUE(MetaResult::Supercede, 0);
+	}
+
+	RETURN_META_VALUE(MetaResult::Ignored, 1);
 }
 
 void trace_line(const Vector& start_pos, const Vector& end_pos, int trace_ignore_flags, Edict* entity_to_ignore, TraceResult* result)
@@ -352,14 +379,14 @@ void trace_line(const Vector& start_pos, const Vector& end_pos, int trace_ignore
 	if (traceIt->second.empty())
 		return;
 
-	map<int, SolidType> saveSolid;
+	unordered_map<int, SolidType> saveSolid;
 
 	for (auto ent : traceIt->second)
 	{
-		auto edict = Engine::entity_of_ent_index(ent.first);
+		auto edict = Engine::entity_of_ent_index(ent);
 		if (edict)
 		{
-			saveSolid.insert({ ent.first, edict->vars.solid });
+			saveSolid.insert({ ent, edict->vars.solid });
 			edict->vars.solid = SolidType::NotSolid;
 		}
 	}
@@ -376,38 +403,38 @@ void trace_line(const Vector& start_pos, const Vector& end_pos, int trace_ignore
 	}
 
 	RETURN_META(MetaResult::Supercede);
-
 }
 
 void trace_hull(const Vector& start_pos, const Vector& end_pos, int trace_ignore_flags, int hull_number, Edict* entity_to_ignore, TraceResult* result)
 {
 	auto id = Engine::index_of_edict(entity_to_ignore);
 	auto traceIt = mapNoTraceManager.find(id);
+
 	if (traceIt == mapNoTraceManager.end())
 		return;
 	if (traceIt->second.empty())
 		return;
 
-	map<int, vec_t> saveSize;
+	unordered_map<int, SolidType> saveSolid;
 
 	for (auto ent : traceIt->second)
 	{
-		auto edict = Engine::entity_of_ent_index(ent.first);
+		auto edict = Engine::entity_of_ent_index(ent);
 		if (edict)
 		{
-			saveSize.insert({ ent.first, edict->vars.size.x });
-			edict->vars.size.x = 0.0;
+			saveSolid.insert({ ent, edict->vars.solid });
+			edict->vars.solid = SolidType::NotSolid;
 		}
 	}
 
 	Engine::trace_hull(start_pos, end_pos, trace_ignore_flags, hull_number, entity_to_ignore, result);
 
-	for (auto ent : saveSize)
+	for (auto ent : saveSolid)
 	{
 		auto edict = Engine::entity_of_ent_index(ent.first);
 		if (edict)
 		{
-			edict->vars.size.x = ent.second;
+			edict->vars.solid = ent.second;
 		}
 	}
 
@@ -417,7 +444,8 @@ void trace_hull(const Vector& start_pos, const Vector& end_pos, int trace_ignore
 void server_deactivate()
 {
 	mapAddToFullPackManager.clear();
-	mapCollisionManager.clear();
+	mapSemiclipManager.clear();
+	mapNoCollisionManager.clear();
 	mapNoTraceManager.clear();
 }
 
@@ -441,7 +469,7 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_set(Amx* amx, cell* params)
 	{
 		if (mapAddToFullPackManager[viewer_id].find(entity_id) != mapAddToFullPackManager[viewer_id].end())
 		{
-			auto exists = std::find_if(mapAddToFullPackManager[viewer_id][entity_id].begin(),
+			auto exists = find_if(mapAddToFullPackManager[viewer_id][entity_id].begin(),
 				mapAddToFullPackManager[viewer_id][entity_id].end(), [&](auto &es)
 				{
 					return (es->getType() == entity_state_type);
@@ -478,7 +506,7 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_unset(Amx* amx, cell* params)
 	{
 		if (mapAddToFullPackManager[viewer_id].find(entity_id) != mapAddToFullPackManager[viewer_id].end())
 		{
-			auto exists = std::find_if(mapAddToFullPackManager[viewer_id][entity_id].begin(),
+			auto exists = find_if(mapAddToFullPackManager[viewer_id][entity_id].begin(),
 				mapAddToFullPackManager[viewer_id][entity_id].end(), [&](auto& es)
 				{
 					return (es->getType() == entity_state_type);
@@ -486,11 +514,15 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_unset(Amx* amx, cell* params)
 			if (exists != mapAddToFullPackManager[viewer_id][entity_id].end())
 			{
 				mapAddToFullPackManager[viewer_id][entity_id].erase(exists);
+				if (mapAddToFullPackManager[viewer_id][entity_id].empty())
+				{
+					mapAddToFullPackManager[viewer_id].erase(entity_id);
+				}
 				return 1;
 			}
 		}
 	}
-	// not found
+
 	return 0; 
 }
 
@@ -504,107 +536,138 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_reset(Amx* amx, cell* params)
 	{
 		return 0;
 	}
-
 	mapAddToFullPackManager.erase(viewer_id);
 	return 1;
 }
 
 
-static cell AMX_NATIVE_CALL addtofullpack_manager_collision_enable(Amx* amx, cell* params)
+static cell AMX_NATIVE_CALL addtofullpack_manager_semiclip_enable(Amx* amx, cell* params)
 {
-	enum args { arg_viewer_id = 1, arg_entity_id, arg_value };
+	enum args { arg_toucher_id = 1, arg_touched_id };
 
-	int viewer_id = params[arg_viewer_id];
-	int entity_id = params[arg_entity_id];
+	int toucher_id = params[arg_toucher_id];
+	int touched_id = params[arg_touched_id];
 
-	if (viewer_id == entity_id)
+	if (toucher_id == touched_id)
 	{
 		return 0;
 	}
 
-	cell* set = AmxxApi::get_amx_address(amx, params[arg_value]);
+	auto exists = find_if(mapSemiclipManager[toucher_id].begin(),
+		mapSemiclipManager[toucher_id].end(), [&](auto& id)
+		{
+			return (id == touched_id);
+		});
 
-	mapCollisionManager[viewer_id][entity_id] = *set;
+	if (exists != mapSemiclipManager[toucher_id].end())
+	{
+		return 0;
+	}
+
+	mapSemiclipManager[toucher_id].push_back(touched_id);
 	return 1;
 }
 
-static cell AMX_NATIVE_CALL addtofullpack_manager_collision_disable(Amx* amx, cell* params)
+static cell AMX_NATIVE_CALL addtofullpack_manager_semiclip_disable(Amx* amx, cell* params)
 {
-	enum args { arg_viewer_id = 1, arg_entity_id, arg_value };
+	enum args { arg_toucher_id = 1, arg_touched_id };
 
-	int viewer_id = params[arg_viewer_id];
-	int entity_id = params[arg_entity_id];
+	int toucher_id = params[arg_toucher_id];
+	int touched_id = params[arg_touched_id];
 
-	if (viewer_id == entity_id)
+	if (toucher_id == touched_id)
 	{
 		return 0;
 	}
 
-	if (mapCollisionManager.find(viewer_id) != mapCollisionManager.end())
-	{
-		if (mapCollisionManager[viewer_id].find(entity_id) != mapCollisionManager[viewer_id].end())
+	auto exists = find_if(mapSemiclipManager[toucher_id].begin(),
+		mapSemiclipManager[toucher_id].end(), [&](auto& id)
 		{
-			mapCollisionManager[viewer_id].erase(entity_id);
-			return 1;
+			return (id == touched_id);
+		});
+
+	if (exists != mapSemiclipManager[toucher_id].end())
+	{
+		mapSemiclipManager[toucher_id].erase(exists);
+		if (mapSemiclipManager[toucher_id].empty())
+		{
+			mapSemiclipManager.erase(toucher_id);
 		}
+		return 1;
 	}
 
 	return 0;
 }
 
-static cell AMX_NATIVE_CALL addtofullpack_manager_collision_reset(Amx* amx, cell* params)
+static cell AMX_NATIVE_CALL addtofullpack_manager_semiclip_reset(Amx* amx, cell* params)
 {
-	enum args { arg_viewer_id = 1 };
+	enum args { arg_toucher_id = 1 };
 
-	int viewer_id = params[arg_viewer_id];
+	int toucher_id = params[arg_toucher_id];
 
-	if (mapCollisionManager.find(viewer_id) == mapCollisionManager.end())
+	if (mapSemiclipManager.find(toucher_id) == mapSemiclipManager.end())
 	{
 		return 0;
 	}
 
-	mapCollisionManager.erase(viewer_id);
+	mapSemiclipManager.erase(toucher_id);
 	return 1;
 }
 
 
 static cell AMX_NATIVE_CALL addtofullpack_manager_notrace_enable(Amx* amx, cell* params)
 {
-	enum args { arg_viewer_id = 1, arg_entity_id, arg_value };
+	enum args { arg_id = 1, arg_ignore_id };
 
-	int viewer_id = params[arg_viewer_id];
-	int entity_id = params[arg_entity_id];
+	int id = params[arg_id];
+	int ignore_id = params[arg_ignore_id];
 
-	if (viewer_id == entity_id || entity_id <= 0)
+	if (id == ignore_id || ignore_id <= 0)
 	{
 		return 0;
 	}
 
-	cell* set = AmxxApi::get_amx_address(amx, params[arg_value]);
+	auto exists = find_if(mapNoTraceManager[id].begin(),
+		mapNoTraceManager[id].end(), [&](auto& find_id)
+		{
+			return (find_id == ignore_id);
+		});
 
-	mapNoTraceManager[viewer_id][entity_id] = *set;
+	if (exists != mapNoTraceManager[id].end())
+	{
+		return 0;
+	}
+
+	mapNoTraceManager[id].push_back(ignore_id);
 	return 1;
 }
 
 static cell AMX_NATIVE_CALL addtofullpack_manager_notrace_disable(Amx* amx, cell* params)
 {
-	enum args { arg_viewer_id = 1, arg_entity_id, arg_value };
+	enum args { arg_id = 1, arg_ignore_id };
 
-	int viewer_id = params[arg_viewer_id];
-	int entity_id = params[arg_entity_id];
+	int id = params[arg_id];
+	int ignore_id = params[arg_ignore_id];
 
-	if (viewer_id == entity_id || entity_id <= 0)
+	if (id == ignore_id || ignore_id <= 0)
 	{
 		return 0;
 	}
 
-	if (mapNoTraceManager.find(viewer_id) != mapNoTraceManager.end())
-	{
-		if (mapNoTraceManager[viewer_id].find(entity_id) != mapNoTraceManager[viewer_id].end())
+	auto exists = find_if(mapNoTraceManager[id].begin(),
+		mapNoTraceManager[id].end(), [&](auto& find_id)
 		{
-			mapNoTraceManager[viewer_id].erase(entity_id);
-			return 1;
+			return (find_id == ignore_id);
+		});
+
+	if (exists != mapNoTraceManager[id].end())
+	{
+		mapNoTraceManager[id].erase(exists);
+		if (mapNoTraceManager[id].empty())
+		{
+			mapNoTraceManager.erase(id);
 		}
+		return 1;
 	}
 
 	return 0;
@@ -612,40 +675,121 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_notrace_disable(Amx* amx, cell
 
 static cell AMX_NATIVE_CALL addtofullpack_manager_notrace_reset(Amx* amx, cell* params)
 {
-	enum args { arg_viewer_id = 1 };
+	enum args { arg_id = 1 };
 
-	int viewer_id = params[arg_viewer_id];
+	int id = params[arg_id];
 
-	if (mapNoTraceManager.find(viewer_id) == mapNoTraceManager.end())
+	if (mapNoTraceManager.find(id) == mapNoTraceManager.end())
 	{
 		return 0;
 	}
 
-	mapNoTraceManager.erase(viewer_id);
+	mapNoTraceManager.erase(id);
 	return 1;
 }
 
+
+static cell AMX_NATIVE_CALL addtofullpack_manager_nocollision_enable(Amx* amx, cell* params)
+{
+	enum args { arg_other_id = 1, arg_touched_id };
+
+	int touched_id = params[arg_touched_id];
+	int other_id = params[arg_other_id];
+
+	if (touched_id == other_id)
+	{
+		return 0;
+	}
+
+	auto exists = find_if(mapNoCollisionManager[other_id].begin(),
+		mapNoCollisionManager[other_id].end(), [&](auto& id)
+		{
+			return (id == touched_id);
+		});
+
+	if (exists != mapNoCollisionManager[other_id].end())
+	{
+		return 0;
+	}
+
+	mapNoCollisionManager[other_id].push_back(touched_id);
+
+	return 1;
+}
+
+static cell AMX_NATIVE_CALL addtofullpack_manager_nocollision_disable(Amx* amx, cell* params)
+{
+	enum args { arg_other_id = 1, arg_touched_id };
+
+	int touched_id = params[arg_touched_id];
+	int other_id = params[arg_other_id];
+
+	if (touched_id == other_id)
+	{
+		return 0;
+	}
+
+	auto exists = find_if(mapNoCollisionManager[other_id].begin(),
+		mapNoCollisionManager[other_id].end(), [&](auto& id)
+		{
+			return (id == touched_id);
+		});
+
+	if (exists != mapNoCollisionManager[other_id].end())
+	{
+		mapNoCollisionManager[other_id].erase(exists);
+
+		if (mapNoCollisionManager[other_id].empty())
+		{
+			mapNoCollisionManager.erase(other_id);
+		}
+		return 1;
+	}
+
+	return 0;
+}
+
+static cell AMX_NATIVE_CALL addtofullpack_manager_nocollision_reset(Amx* amx, cell* params)
+{
+	enum args { arg_other_id = 1 };
+
+	int other_id = params[arg_other_id];
+
+	if (mapNoCollisionManager.find(other_id) == mapNoCollisionManager.end())
+	{
+		return 0;
+	}
+
+	mapNoCollisionManager.erase(other_id);
+	return 1;
+}
+
+
 static cell AMX_NATIVE_CALL addtofullpack_manager_reset_all(Amx* amx, cell* params)
 {
-	enum args { arg_viewer_id = 1 };
+	enum args { arg_id = 1 };
 
-	int viewer_id = params[arg_viewer_id];
+	int id = params[arg_id];
 
-	if (mapCollisionManager.find(viewer_id) != mapCollisionManager.end())
+	if (mapSemiclipManager.find(id) != mapSemiclipManager.end())
 	{
-		mapCollisionManager.erase(viewer_id);
+		mapSemiclipManager.erase(id);
 	}
 
-	if (mapAddToFullPackManager.find(viewer_id) != mapAddToFullPackManager.end())
+	if (mapAddToFullPackManager.find(id) != mapAddToFullPackManager.end())
 	{
-		mapAddToFullPackManager.erase(viewer_id);
+		mapAddToFullPackManager.erase(id);
 	}
 
-	if (mapNoTraceManager.find(viewer_id) != mapNoTraceManager.end())
+	if (mapNoTraceManager.find(id) != mapNoTraceManager.end())
 	{
-		mapNoTraceManager.erase(viewer_id);
+		mapNoTraceManager.erase(id);
 	}
 
+	if (mapNoCollisionManager.find(id) != mapNoCollisionManager.end())
+	{
+		mapNoCollisionManager.erase(id);
+	}
 
 	return 1;
 }
@@ -655,13 +799,21 @@ static const AmxNativeInfo natives[] =
 	{"fullpack_set", addtofullpack_manager_set},
 	{"fullpack_unset", addtofullpack_manager_unset},
 	{"fullpack_reset", addtofullpack_manager_reset},
-	{"fullpack_reset_all", addtofullpack_manager_reset_all},
-	{"fullpack_semiclip_enable", addtofullpack_manager_collision_enable},
-	{"fullpack_semiclip_disable", addtofullpack_manager_collision_disable},
-	{"fullpack_semiclip_reset", addtofullpack_manager_collision_reset},
+
+	{"fullpack_semiclip_enable", addtofullpack_manager_semiclip_enable},
+	{"fullpack_semiclip_disable", addtofullpack_manager_semiclip_disable},
+	{"fullpack_semiclip_reset", addtofullpack_manager_semiclip_reset},
+
 	{"fullpack_notrace_enable", addtofullpack_manager_notrace_enable},
 	{"fullpack_notrace_disable", addtofullpack_manager_notrace_disable},
 	{"fullpack_notrace_reset", addtofullpack_manager_notrace_reset},
+
+	{"fullpack_nocollision_enable", addtofullpack_manager_nocollision_enable},
+	{"fullpack_nocollision_disable", addtofullpack_manager_nocollision_disable},
+	{"fullpack_nocollision_reset", addtofullpack_manager_nocollision_reset},
+
+	{"fullpack_reset_all", addtofullpack_manager_reset_all},
+
 	{nullptr, nullptr}
 };
 
@@ -678,6 +830,8 @@ AmxxStatus on_amxx_attach()
 
 	EngineHooks::trace_line(trace_line, false);
 	EngineHooks::trace_hull(trace_hull, false);
+
+	GameDllNewHooks::should_collide(should_collide, false);
 
 	GameDllHooks::server_deactivate(server_deactivate, true);
 	AmxxApi::add_natives(natives);

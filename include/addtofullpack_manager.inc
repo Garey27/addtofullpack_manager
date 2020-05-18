@@ -208,9 +208,49 @@ native fullpack_notrace_disable(id, ignore_id);
  */
 native fullpack_notrace_reset(id);
 
+/**
+ * Enable collision between two enities between toucher and touched id
+ *
+ * @param toucher		Toucher id
+ * @param touched		Touched id
+ *	
+ * @note 				Usage examples:
+ *  						fullpack_collision_enable(toucher, touched);
+ *						
+ * @return				1 on success, otherwise 0
+ */
+native fullpack_nocollision_enable(toucher, touched);
+
 
 /**
- * Resets all states in module (fullpack, semiclip, notrace) to given entity (Useful when player is connected/disconnected)
+ * Disable collision between two enities between toucher and touched id
+ *
+ * @param toucher		Toucher id
+ * @param touched		Touched id
+ *		
+ * @note 				Usage examples:
+ *  						fullpack_collision_disable(toucher, touched);
+ *						
+ * @return				1 on success, otherwise 0
+ */
+native fullpack_nocollision_disable(toucher, touched);
+
+
+/**
+ * Resets all collision preferences that previously set with fullpack_collision_disable
+ *
+ * @param toucher		Toucher id
+ *		
+ * @note 				Usage examples:
+ *  						fullpack_collision_reset(toucher);
+ *						
+ * @return				1 on success, otherwise 0
+ */
+native fullpack_nocollision_reset(toucher);
+
+
+/**
+ * Resets all states in module (fullpack, semiclip, notrace, nocollision) to given entity (Useful when player is connected/disconnected)
  *
  * @param id			Id to reset all states
  * 			
