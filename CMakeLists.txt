@@ -12,7 +12,7 @@
 #-------------------------------------------------------------------------------------------
 
 # Require a minimum version of cmake.
-cmake_minimum_required(VERSION 3.13.5 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
 # Set the name of the project.
 project("addtofullpack_manager")

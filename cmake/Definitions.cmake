@@ -25,7 +25,10 @@ elseif(WIN32)
         # Build type Release, MinSizeRel, RelWithDebInfo
         $<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>,$<CONFIG:RelWithDebInfo>>:
         NDEBUG RELEASE _RELEASE>
-)
+    )
+    set_target_properties("${CMAKE_PROJECT_NAME}" PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" # static linking
+    )
 endif()
 
 # Set the DEFINE_SYMBOL property
