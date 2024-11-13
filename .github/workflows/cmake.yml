@@ -96,9 +96,9 @@ jobs:
           mkdir -p amxmodx/scripting/include amxmodx/modules
           cp addtofullpack_manager_amxx.dll addtofullpack_manager_amxx_i386.so amxmodx/modules
           cp include/addtofullpack_manager.inc amxmodx/scripting/include
-          7z a -tzip addtofullpack_manager-bin-${RELEASE_VERSION}.zip addons
+          7z a -tzip addtofullpack_manager-bin-${RELEASE_VERSION}.zip amxmodx
         
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: addtofullpack_manager-bin-*.zip
