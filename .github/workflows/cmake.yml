@@ -37,7 +37,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: linux
-        path: ${{github.workspace}}/out/addtofullpack_manager_amxx_i386.so
+        path: ${{github.workspace}}/build/addtofullpack_manager_amxx_i386.so
           
   build_windows:
     runs-on: windows-latest
@@ -70,7 +70,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: windows
-        path: ${{github.workspace}}/out/Release/addtofullpack_manager_amxx.dll
+        path: ${{github.workspace}}/build/Release/addtofullpack_manager_amxx.dll
   publish:
     name: 'Publish'
     runs-on: ubuntu-latest
