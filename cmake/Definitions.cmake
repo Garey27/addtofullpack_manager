@@ -29,6 +29,9 @@ elseif(WIN32)
     set_target_properties("${CMAKE_PROJECT_NAME}" PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" # static linking
     )
+    target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+    "$<$<CONFIG:Debug>:/ZI>")
+    target_link_options(${CMAKE_PROJECT_NAME} PRIVATE /EXPORT:GiveFnptrsToDll=_GiveFnptrsToDll@8 /SECTION:.data,RW)
 endif()
 
 # Set the DEFINE_SYMBOL property

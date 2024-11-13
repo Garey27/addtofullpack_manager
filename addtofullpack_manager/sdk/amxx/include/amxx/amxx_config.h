@@ -75,7 +75,7 @@ constexpr auto AMXX_MODULE_LIB_CLASS = "addtofullpack_manager";
 /// <summary>
 /// <para>Reload module on map change.</para>
 /// </summary>
-constexpr auto AMXX_MODULE_RELOAD_ON_MAP_CHANGE = false;
+constexpr auto AMXX_MODULE_RELOAD_ON_MAP_CHANGE = true;
 
 /*
  * -------------------------------------------------------------------------------------------
