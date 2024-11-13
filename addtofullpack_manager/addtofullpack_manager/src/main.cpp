@@ -9,10 +9,8 @@
 #include <addtofullpack_manager/regamedll_api.h>
 #include <vector>
 #include <memory>
-#include <algorithm>    // std::find_if
 #include <unordered_map>
-
-using namespace std;
+#include <unordered_set>
 
 enum class entity_state_e
 {
@@ -100,7 +98,7 @@ namespace AddToFullPackManager
 			uintptr_t real_size;
 		};
 
-		static unordered_map<entity_state_e, EntityStateType> es_types;
+		static std::unordered_map<entity_state_e, EntityStateType> es_types;
 
 		entity_state_e type;
 		void* value;
@@ -206,9 +204,9 @@ namespace AddToFullPackManager
 				{
 				case Float:
 				{
-					auto arr_size = type_found->second.real_size / sizeof(float);
+					size_t arr_size = type_found->second.real_size / sizeof(float);
 					float* new_val = new float[arr_size];
-					for (auto i = 0; i < arr_size; i++)
+					for (size_t i = 0; i < arr_size; i++)
 					{
 						new_val[i] = amx_ctof(value[i]);
 					}
@@ -217,9 +215,9 @@ namespace AddToFullPackManager
 				}
 				case Integer:
 				{
-					auto arr_size = type_found->second.real_size / sizeof(int);
+					size_t arr_size = type_found->second.real_size / sizeof(int);
 					int* new_val = new int[arr_size];
-					for (auto i = 0; i < arr_size; i++)
+					for (size_t i = 0; i < arr_size; i++)
 					{
 						new_val[i] = value[i];
 					}
@@ -228,9 +226,9 @@ namespace AddToFullPackManager
 				}
 				case Byte:
 				{
-					auto arr_size = type_found->second.real_size / sizeof(uint8);
+					size_t arr_size = type_found->second.real_size / sizeof(uint8);
 					uint8* new_val = new uint8[arr_size];
-					for (auto i = 0; i < arr_size; i++)
+					for (size_t i = 0; i < arr_size; i++)
 					{
 						new_val[i] = value[i];
 					}
@@ -239,9 +237,9 @@ namespace AddToFullPackManager
 				}
 				case Short:
 				{
-					auto arr_size = type_found->second.real_size / sizeof(uint16);
+					size_t arr_size = type_found->second.real_size / sizeof(uint16);
 					uint16* new_val = new uint16[arr_size];
-					for (auto i = 0; i < arr_size; i++)
+					for (size_t i = 0; i < arr_size; i++)
 					{
 						new_val[i] = value[i];
 					}
@@ -273,13 +271,13 @@ namespace AddToFullPackManager
 		}
 	};
 }
-unordered_map<int, unordered_map<int, vector<shared_ptr<AddToFullPackManager::SingleEntityState>>>> mapAddToFullPackManager;
-unordered_map<int, vector<int>> mapSemiclipManager;
-unordered_map<int, vector<int>> mapNoCollisionManager;
-unordered_map<int, vector<int>> mapNoTraceManager;
-unordered_map<entity_state_e, AddToFullPackManager::SingleEntityState::EntityStateType> AddToFullPackManager::SingleEntityState::es_types;
+std::unordered_map<int, std::unordered_map<int, std::unordered_map<entity_state_e, std::unique_ptr<AddToFullPackManager::SingleEntityState>>>> mapAddToFullPackManager;
+std::unordered_map<int, std::unordered_set<int>> mapSemiclipManager;
+std::unordered_map<int, std::unordered_set<int>> mapNoCollisionManager;
+std::unordered_map<int, std::unordered_set<int>> mapNoTraceManager;
+std::unordered_map<entity_state_e, AddToFullPackManager::SingleEntityState::EntityStateType> AddToFullPackManager::SingleEntityState::es_types;
 PhysEntity phys_ents_backup[MAX_PHYS_ENTS];
-uint32_t phys_ents_backup_num;
+size_t phys_ents_backup_num;
 
 int add_to_full_pack(EntityState* state, int entity_index, Edict* entity, Edict* host, int host_flags, qboolean player, unsigned char* set)
 {
@@ -296,11 +294,11 @@ int add_to_full_pack(EntityState* state, int entity_index, Edict* entity, Edict*
 	{
 		int entity_id = Engine::index_of_edict(entity);
 
-		auto found2 = found->second.find(entity_id);
+		auto found_entity = found->second.find(entity_id);
 
-		if (found2 != found->second.end())
+		if (found_entity != found->second.end())
 		{
-			for (auto st : found2->second)
+			for (auto& [key, st] : found_entity->second)
 			{
 				memcpy(reinterpret_cast<uint8_t*>(state) + st->getOffset(), st->getValue(), st->getSize());
 			}
@@ -321,14 +319,9 @@ void pm_move(PlayerMove* move, qboolean server)
 	phys_ents_backup_num = move->num_phys_ent;
 	memcpy(phys_ents_backup, move->phys_ents, sizeof(PhysEntity) * move->num_phys_ent);
 	move->num_phys_ent = 0;
-	for (int i = 0; i < phys_ents_backup_num; i++)
+	for (size_t i = 0; i < phys_ents_backup_num; i++)
 	{
-		auto exists = find_if(colEl->second.begin(),
-			colEl->second.end(), [&](auto& info)
-			{
-				return (info == phys_ents_backup[i].info);
-			});
-
+		auto exists = colEl->second.find(phys_ents_backup[i].info);
 		if (exists != colEl->second.end())
 		{
 			continue;
@@ -355,11 +348,7 @@ qboolean should_collide(Edict* entity_touched, Edict* entity_other)
 
 	int touched_id = Engine::index_of_edict(entity_touched);
 
-	auto exists = find_if(mapNoCollisionManager[toucher_id].begin(),
-		mapNoCollisionManager[toucher_id].end(), [&](auto& id)
-		{
-			return (id == touched_id);
-		});
+	auto exists = mapNoCollisionManager[toucher_id].find(touched_id);
 
 	if (exists != mapNoCollisionManager[toucher_id].end())
 	{
@@ -379,7 +368,7 @@ void trace_line(const Vector& start_pos, const Vector& end_pos, int trace_ignore
 	if (traceIt->second.empty())
 		return;
 
-	unordered_map<int, SolidType> saveSolid;
+	std::unordered_map<int, SolidType> saveSolid;
 
 	for (auto ent : traceIt->second)
 	{
@@ -415,7 +404,7 @@ void trace_hull(const Vector& start_pos, const Vector& end_pos, int trace_ignore
 	if (traceIt->second.empty())
 		return;
 
-	unordered_map<int, SolidType> saveSolid;
+	std:: unordered_map<int, SolidType> saveSolid;
 
 	for (auto ent : traceIt->second)
 	{
@@ -469,21 +458,17 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_set(Amx* amx, cell* params)
 	{
 		if (mapAddToFullPackManager[viewer_id].find(entity_id) != mapAddToFullPackManager[viewer_id].end())
 		{
-			auto exists = find_if(mapAddToFullPackManager[viewer_id][entity_id].begin(),
-				mapAddToFullPackManager[viewer_id][entity_id].end(), [&](auto &es)
-				{
-					return (es->getType() == entity_state_type);
-				});
+			auto exists = mapAddToFullPackManager[viewer_id][entity_id].find(entity_state_type);
 			if (exists != mapAddToFullPackManager[viewer_id][entity_id].end())
 			{
-				(*exists)->updateValue(value);				
+				exists->second->updateValue(value);
 				value_exists = true;
 			}		
 		}
 	}
 	if (!value_exists)
 	{
-		mapAddToFullPackManager[viewer_id][entity_id].push_back(make_shared<AddToFullPackManager::SingleEntityState>(entity_state_type, value));
+		mapAddToFullPackManager[viewer_id][entity_id][entity_state_type] = std::make_unique<AddToFullPackManager::SingleEntityState>(entity_state_type, value);
 	}
 	return 1;
 }
@@ -506,11 +491,7 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_unset(Amx* amx, cell* params)
 	{
 		if (mapAddToFullPackManager[viewer_id].find(entity_id) != mapAddToFullPackManager[viewer_id].end())
 		{
-			auto exists = find_if(mapAddToFullPackManager[viewer_id][entity_id].begin(),
-				mapAddToFullPackManager[viewer_id][entity_id].end(), [&](auto& es)
-				{
-					return (es->getType() == entity_state_type);
-				});
+			auto exists = mapAddToFullPackManager[viewer_id][entity_id].find(entity_state_type);
 			if (exists != mapAddToFullPackManager[viewer_id][entity_id].end())
 			{
 				mapAddToFullPackManager[viewer_id][entity_id].erase(exists);
@@ -552,19 +533,14 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_semiclip_enable(Amx* amx, cell
 	{
 		return 0;
 	}
-
-	auto exists = find_if(mapSemiclipManager[toucher_id].begin(),
-		mapSemiclipManager[toucher_id].end(), [&](auto& id)
-		{
-			return (id == touched_id);
-		});
+	auto exists = mapSemiclipManager[toucher_id].find(touched_id);
 
 	if (exists != mapSemiclipManager[toucher_id].end())
 	{
 		return 0;
 	}
 
-	mapSemiclipManager[toucher_id].push_back(touched_id);
+	mapSemiclipManager[toucher_id].insert(touched_id);
 	return 1;
 }
 
@@ -580,11 +556,7 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_semiclip_disable(Amx* amx, cel
 		return 0;
 	}
 
-	auto exists = find_if(mapSemiclipManager[toucher_id].begin(),
-		mapSemiclipManager[toucher_id].end(), [&](auto& id)
-		{
-			return (id == touched_id);
-		});
+	auto exists = mapSemiclipManager[toucher_id].find(touched_id);
 
 	if (exists != mapSemiclipManager[toucher_id].end())
 	{
@@ -622,23 +594,19 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_notrace_enable(Amx* amx, cell*
 	int id = params[arg_id];
 	int ignore_id = params[arg_ignore_id];
 
-	if (id == ignore_id || ignore_id <= 0)
+	if (id == ignore_id || ignore_id < 0)
 	{
 		return 0;
 	}
 
-	auto exists = find_if(mapNoTraceManager[id].begin(),
-		mapNoTraceManager[id].end(), [&](auto& find_id)
-		{
-			return (find_id == ignore_id);
-		});
+	auto exists = mapNoTraceManager[id].find(ignore_id);
 
 	if (exists != mapNoTraceManager[id].end())
 	{
 		return 0;
 	}
 
-	mapNoTraceManager[id].push_back(ignore_id);
+	mapNoTraceManager[id].insert(ignore_id);
 	return 1;
 }
 
@@ -649,16 +617,12 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_notrace_disable(Amx* amx, cell
 	int id = params[arg_id];
 	int ignore_id = params[arg_ignore_id];
 
-	if (id == ignore_id || ignore_id <= 0)
+	if (id == ignore_id || ignore_id < 0)
 	{
 		return 0;
 	}
 
-	auto exists = find_if(mapNoTraceManager[id].begin(),
-		mapNoTraceManager[id].end(), [&](auto& find_id)
-		{
-			return (find_id == ignore_id);
-		});
+	auto exists = mapNoTraceManager[id].find(ignore_id);
 
 	if (exists != mapNoTraceManager[id].end())
 	{
@@ -701,18 +665,14 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_nocollision_enable(Amx* amx, c
 		return 0;
 	}
 
-	auto exists = find_if(mapNoCollisionManager[other_id].begin(),
-		mapNoCollisionManager[other_id].end(), [&](auto& id)
-		{
-			return (id == touched_id);
-		});
+	auto exists = mapNoCollisionManager[other_id].find(touched_id);
 
 	if (exists != mapNoCollisionManager[other_id].end())
 	{
 		return 0;
 	}
 
-	mapNoCollisionManager[other_id].push_back(touched_id);
+	mapNoCollisionManager[other_id].insert(touched_id);
 
 	return 1;
 }
@@ -729,12 +689,7 @@ static cell AMX_NATIVE_CALL addtofullpack_manager_nocollision_disable(Amx* amx, 
 		return 0;
 	}
 
-	auto exists = find_if(mapNoCollisionManager[other_id].begin(),
-		mapNoCollisionManager[other_id].end(), [&](auto& id)
-		{
-			return (id == touched_id);
-		});
-
+	auto exists = mapNoCollisionManager[other_id].find(touched_id);
 	if (exists != mapNoCollisionManager[other_id].end())
 	{
 		mapNoCollisionManager[other_id].erase(exists);
@@ -819,9 +774,6 @@ static const AmxNativeInfo natives[] =
 
 AmxxStatus on_amxx_attach()
 {
-	if (!RehldsApi::init() || !RegamedllApi::init())
-		return AmxxStatus::FuncNotPresent;
-
 	AddToFullPackManager::SingleEntityState::EntityStateInitTypes();
 
 	GameDllHooks::add_to_full_pack(add_to_full_pack, true);

@@ -29,7 +29,7 @@
 constexpr auto AMXX_MODULE_NAME = "AddToFullPack Manager";
 /// <summary>
 /// </summary>
-constexpr auto AMXX_MODULE_VERSION = "1.0.1";
+constexpr auto AMXX_MODULE_VERSION = PROJECT_VERSION;
 /// <summary>
 /// </summary>
 constexpr auto AMXX_MODULE_AUTHOR = "Denzer";

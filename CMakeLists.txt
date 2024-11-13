@@ -45,10 +45,13 @@ set(CMAKE_RULE_MESSAGES ON)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 
 include(cmake/Tools.cmake)
+include(cmake/cmake-version4git.cmake)
+
+PROJECT_VERSION_FROM_GIT()
+add_definitions(${PROJECT_VERSION4GIT_CFLAGS})
 set_build_type()
 set_output_binary_name()
 set_default_parallel_jobs()
-set_binary_output_directory("bin")
 
 
 #-------------------------------------------------------------------------------------------
@@ -79,11 +82,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${sources_list})
 #-------------------------------------------------------------------------------------------
 
 include(cmake/Definitions.cmake)
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    REHLDS_FIXES
-    REGAMEDLL_FIXES
-    REGAMEDLL_API
-)
 
 
 #-------------------------------------------------------------------------------------------

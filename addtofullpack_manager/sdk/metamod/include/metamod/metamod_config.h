@@ -15,8 +15,9 @@
  *	Metamod plugin info.
  * -------------------------------------------------------------------------------------------
  */
+
 constexpr auto META_PLUGIN_NAME = "AddToFullPack Manager";
-constexpr auto META_PLUGIN_VERSION = "1.0.0";
+constexpr auto META_PLUGIN_VERSION = PROJECT_VERSION;
 constexpr auto META_PLUGIN_AUTHOR = "Denzer";
 constexpr auto META_PLUGIN_LOG_TAG = "addtofullpack_manager";
 constexpr auto META_PLUGIN_URL = "https://dev-cs.ru";
